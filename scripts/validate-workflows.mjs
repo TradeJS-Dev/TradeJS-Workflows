@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const reusableFiles = [
+  '.github/workflows/monorepo-package-publish.yml',
   '.github/workflows/strategy-ci.yml',
   '.github/workflows/strategy-publish.yml',
 ];
@@ -48,6 +49,20 @@ for (const required of [
   }
 }
 
+const monorepoPublish = readRequired(
+  '.github/workflows/monorepo-package-publish.yml',
+);
+for (const required of [
+  'id-token: write',
+  'Validate unpublished package identity',
+  'yarn workspace "$WORKSPACE" npm publish',
+  '--provenance',
+]) {
+  if (!monorepoPublish.includes(required)) {
+    fail(`monorepo-package-publish.yml is missing ${required}`);
+  }
+}
+
 const workflowSources = fs
   .readdirSync(path.join(root, '.github/workflows'))
   .filter((name) => name.endsWith('.yml'))
@@ -66,4 +81,4 @@ for (const forbidden of [
   }
 }
 
-console.log('Validated reusable strategy CI and npm release workflows.');
+console.log('Validated reusable TradeJS CI and npm release workflows.');

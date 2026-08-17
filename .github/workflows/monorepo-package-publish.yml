@@ -1,0 +1,105 @@
+name: Reusable monorepo package publish
+
+on:
+  workflow_call:
+    inputs:
+      workspace-name:
+        description: Exact Yarn workspace and npm package name
+        required: true
+        type: string
+      package-directory:
+        description: Repository-relative directory containing package.json
+        required: true
+        type: string
+      node-version:
+        description: Node.js major used by the caller repository
+        required: false
+        type: string
+        default: '24'
+      yarn-version:
+        description: Yarn release activated through Corepack
+        required: false
+        type: string
+        default: 4.13.0
+      npm-tag:
+        description: npm distribution tag
+        required: false
+        type: string
+        default: latest
+    secrets:
+      npm-token:
+        description: Optional bootstrap token when npm trusted publishing is unavailable
+        required: false
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout caller repository
+        uses: actions/checkout@v6
+      - name: Set up Node.js and npm registry
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ inputs.node-version }}
+          registry-url: https://registry.npmjs.org
+      - name: Activate Yarn
+        run: |
+          corepack enable
+          corepack prepare yarn@${{ inputs.yarn-version }} --activate
+      - name: Install immutable dependencies
+        run: yarn install --immutable
+      - name: Validate unpublished package identity
+        id: package
+        env:
+          PACKAGE_DIRECTORY: ${{ inputs.package-directory }}
+          WORKSPACE: ${{ inputs.workspace-name }}
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          import path from 'node:path';
+
+          const manifestPath = path.resolve(
+            process.env.PACKAGE_DIRECTORY,
+            'package.json',
+          );
+          const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+          if (manifest.name !== process.env.WORKSPACE) {
+            throw new Error(
+              `Expected ${process.env.WORKSPACE}, found ${manifest.name ?? '<unnamed>'}`,
+            );
+          }
+          if (manifest.private === true) {
+            throw new Error(`${manifest.name} is private and cannot be published`);
+          }
+          fs.appendFileSync(
+            process.env.GITHUB_OUTPUT,
+            `version=${manifest.version}\n`,
+          );
+          NODE
+      - name: Refuse an already published version
+        env:
+          PACKAGE_VERSION: ${{ steps.package.outputs.version }}
+          WORKSPACE: ${{ inputs.workspace-name }}
+        run: |
+          if npm view "${WORKSPACE}@${PACKAGE_VERSION}" version >/dev/null 2>&1; then
+            echo "${WORKSPACE}@${PACKAGE_VERSION} is already published" >&2
+            exit 1
+          fi
+      - name: Verify release candidate
+        run: yarn checks
+      - name: Publish workspace with provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.npm-token }}
+          NPM_TAG: ${{ inputs.npm-tag }}
+          WORKSPACE: ${{ inputs.workspace-name }}
+          YARN_NPM_AUTH_TOKEN: ${{ secrets.npm-token }}
+        run: >-
+          yarn workspace "$WORKSPACE" npm publish
+          --access public
+          --provenance
+          --tag "$NPM_TAG"

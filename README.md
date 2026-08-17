@@ -32,3 +32,5 @@ yarn checks
 The validator rejects branch-pinned reusable calls, `secrets: inherit`, and
 broad write permissions. It also checks the release guard for standalone
 strategy packages and the identity guard for monorepo packages.
+
+Keywords: ai, claude, codex.

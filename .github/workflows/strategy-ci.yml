@@ -1,0 +1,39 @@
+name: Reusable strategy CI
+
+on:
+  workflow_call:
+    inputs:
+      node-version:
+        description: Node.js major used by the strategy repository
+        required: false
+        type: string
+        default: '24'
+      yarn-version:
+        description: Yarn release activated through Corepack
+        required: false
+        type: string
+        default: 4.13.0
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout caller repository
+        uses: actions/checkout@v6
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ inputs.node-version }}
+          cache: yarn
+      - name: Activate Yarn
+        run: |
+          corepack enable
+          corepack prepare yarn@${{ inputs.yarn-version }} --activate
+      - name: Install immutable dependencies
+        run: yarn install --immutable
+      - name: Run repository checks
+        run: yarn checks

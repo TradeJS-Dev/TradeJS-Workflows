@@ -4,6 +4,15 @@
 
 These rules apply to the TradeJS reusable-workflows repository.
 
+## Workspace Routing
+
+- Start from `~/dev/tradejs/AGENTS.md`; do not scan sibling repositories.
+- Change reusable CI/npm publication mechanics here. Package source and
+  release decisions remain in the caller repository; application deployment
+  remains in `tradejs-project` and `tradejs-deploy`.
+- Run `yarn checks` here and inspect only the affected caller when validating a
+  caller-specific contract.
+
 ## Boundaries
 
 - Keep workflows package-neutral.

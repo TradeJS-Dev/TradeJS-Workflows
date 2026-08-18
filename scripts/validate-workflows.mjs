@@ -45,6 +45,7 @@ for (const required of [
   "inputs.channel == 'stable'",
   'beta-candidate',
   'beta-runtime-smoke.sh',
+  'PUPPETEER_SKIP_DOWNLOAD',
   'yarn install --no-immutable',
   'npm dist-tag add',
   'stable-candidate',

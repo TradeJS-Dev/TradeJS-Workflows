@@ -101,6 +101,7 @@ jobs:
         env:
           PACKAGE_NAME: ${{ steps.package.outputs.name }}
           PACKAGE_VERSION: ${{ steps.package.outputs.version }}
+          PUPPETEER_SKIP_DOWNLOAD: 'true'
         run: |
           git clone --depth 1 https://github.com/TradeJS-Dev/TradeJS-Project.git ../tradejs-project-beta
           cd ../tradejs-project-beta

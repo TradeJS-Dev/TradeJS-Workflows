@@ -127,7 +127,13 @@ jobs:
           PACKAGE_NAME: ${{ steps.package.outputs.name }}
           PACKAGE_VERSION: ${{ steps.package.outputs.version }}
         run: |
-          [ "$(npm view "${PACKAGE_NAME}@beta" version)" = "$PACKAGE_VERSION" ]
+          for attempt in $(seq 1 12); do
+            if [ "$(npm view "${PACKAGE_NAME}@beta" version 2>/dev/null || true)" = "$PACKAGE_VERSION" ]; then
+              break
+            fi
+            [ "$attempt" -lt 12 ] || exit 1
+            sleep 10
+          done
           printf 'Verified %s@%s from %s\n' "$PACKAGE_NAME" "$PACKAGE_VERSION" "$GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"
 
   stable:
@@ -297,4 +303,11 @@ jobs:
         env:
           PACKAGE_NAME: ${{ steps.package.outputs.name }}
           STABLE_VERSION: ${{ steps.package.outputs.stable_version }}
-        run: '[ "$(npm view "${PACKAGE_NAME}@latest" version)" = "$STABLE_VERSION" ]'
+        run: |
+          for attempt in $(seq 1 12); do
+            if [ "$(npm view "${PACKAGE_NAME}@latest" version 2>/dev/null || true)" = "$STABLE_VERSION" ]; then
+              exit 0
+            fi
+            [ "$attempt" -lt 12 ] || exit 1
+            sleep 10
+          done

@@ -1,55 +1,299 @@
-name: Reusable strategy npm publish
+name: Reusable package release train
 
 on:
   workflow_call:
     inputs:
+      channel:
+        description: beta for push validation, stable for weekly promotion
+        required: true
+        type: string
+      confirm-promotion:
+        description: Required for a manual stable promotion
+        required: false
+        default: false
+        type: boolean
       node-version:
-        description: Node.js major used by the strategy repository
+        description: Node.js major used by the package repository
         required: false
         type: string
-        default: '24'
+        default: "24"
       yarn-version:
         description: Yarn release activated through Corepack
         required: false
         type: string
         default: 4.13.0
-      npm-tag:
-        description: npm distribution tag
-        required: false
-        type: string
-        default: latest
     secrets:
       npm-token:
         description: Optional bootstrap token when npm trusted publishing is unavailable
         required: false
 
 permissions:
-  contents: read
+  actions: read
+  contents: write
   id-token: write
 
 jobs:
-  publish:
-    if: github.event_name == 'release' && github.event.action == 'published'
+  beta:
+    if: inputs.channel == 'beta'
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 75
     steps:
-      - name: Checkout caller repository
+      - name: Checkout caller source
         uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
       - name: Set up Node.js and npm registry
         uses: actions/setup-node@v7
         with:
           node-version: ${{ inputs.node-version }}
           registry-url: https://registry.npmjs.org
+          package-manager-cache: false
       - name: Activate Yarn
         run: |
           corepack enable
           corepack prepare yarn@${{ inputs.yarn-version }} --activate
       - name: Install immutable dependencies
         run: yarn install --immutable
-      - name: Verify release candidate
+      - name: Resolve an ephemeral beta version
+        id: package
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const manifest = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+          const match = /^(\d+)\.(\d+)\.(\d+)$/.exec(String(manifest.version));
+          if (!/^@tradejs\/[a-z0-9-]+$/.test(String(manifest.name))) {
+            throw new Error(`Invalid TradeJS package name: ${manifest.name}`);
+          }
+          if (!match || manifest.private === true) {
+            throw new Error('A public package with a stable baseline version is required');
+          }
+          const version = `${match[1]}.${match[2]}.${Number(match[3]) + 1}-beta.${process.env.GITHUB_RUN_NUMBER}`;
+          manifest.version = version;
+          fs.writeFileSync('package.json', `${JSON.stringify(manifest, null, 2)}\n`);
+          fs.appendFileSync(process.env.GITHUB_OUTPUT, `name=${manifest.name}\nversion=${version}\n`);
+          NODE
+      - name: Verify beta package
         run: yarn checks
-      - name: Publish with provenance
-        run: npm publish --access public --provenance --tag "${NPM_TAG}"
+      - name: Publish beta candidate with provenance
         env:
           NODE_AUTH_TOKEN: ${{ secrets.npm-token }}
-          NPM_TAG: ${{ inputs.npm-tag }}
+          PACKAGE_NAME: ${{ steps.package.outputs.name }}
+          PACKAGE_VERSION: ${{ steps.package.outputs.version }}
+        run: |
+          if npm view "${PACKAGE_NAME}@${PACKAGE_VERSION}" version >/dev/null 2>&1; then
+            [ "$(npm view "${PACKAGE_NAME}@${PACKAGE_VERSION}" gitHead)" = "$GITHUB_SHA" ] || exit 1
+          else
+            npm publish --access public --provenance --tag beta-candidate
+          fi
+      - name: Wait for exact beta package
+        env:
+          PACKAGE_NAME: ${{ steps.package.outputs.name }}
+          PACKAGE_VERSION: ${{ steps.package.outputs.version }}
+        run: |
+          for attempt in $(seq 1 12); do
+            if [ "$(npm view "${PACKAGE_NAME}@${PACKAGE_VERSION}" version 2>/dev/null)" = "$PACKAGE_VERSION" ]; then
+              exit 0
+            fi
+            [ "$attempt" -lt 12 ] || exit 1
+            sleep 10
+          done
+      - name: Build and smoke the production-like Project image
+        env:
+          PACKAGE_NAME: ${{ steps.package.outputs.name }}
+          PACKAGE_VERSION: ${{ steps.package.outputs.version }}
+        run: |
+          git clone --depth 1 https://github.com/TradeJS-Dev/TradeJS-Project.git ../tradejs-project-beta
+          cd ../tradejs-project-beta
+          project_sha="$(git rev-parse HEAD)"
+          node ./scripts/set-tradejs-package-version.mjs "$PACKAGE_NAME" "$PACKAGE_VERSION"
+          yarn install --no-immutable
+          TRADEJS_ALLOW_PRERELEASE=true yarn checks
+          docker build \
+            --build-arg "TRADEJS_PROJECT_SHA=$project_sha" \
+            --build-arg "TRADEJS_ALLOW_PRERELEASE=true" \
+            -t "tradejs-project-beta:$GITHUB_SHA" .
+          bash ./scripts/beta-runtime-smoke.sh \
+            "tradejs-project-beta:$GITHUB_SHA" "$PACKAGE_NAME" \
+            "$PACKAGE_VERSION" "$project_sha"
+      - name: Mark the verified candidate as current beta
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.npm-token }}
+          PACKAGE_NAME: ${{ steps.package.outputs.name }}
+          PACKAGE_VERSION: ${{ steps.package.outputs.version }}
+        run: npm dist-tag add "${PACKAGE_NAME}@${PACKAGE_VERSION}" beta
+      - name: Verify beta dist-tag
+        env:
+          PACKAGE_NAME: ${{ steps.package.outputs.name }}
+          PACKAGE_VERSION: ${{ steps.package.outputs.version }}
+        run: |
+          [ "$(npm view "${PACKAGE_NAME}@beta" version)" = "$PACKAGE_VERSION" ]
+          printf 'Verified %s@%s from %s\n' "$PACKAGE_NAME" "$PACKAGE_VERSION" "$GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"
+
+  stable:
+    if: inputs.channel == 'stable'
+    environment: npm-production
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout caller history
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: main
+      - name: Set up Node.js and npm registry
+        uses: actions/setup-node@v7
+        with:
+          node-version: ${{ inputs.node-version }}
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+      - name: Resolve the current verified beta
+        id: package
+        env:
+          CONFIRM_PROMOTION: ${{ inputs.confirm-promotion }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ] && [ "$CONFIRM_PROMOTION" != true ]; then
+            echo 'confirm-promotion is required for a manual stable release' >&2
+            exit 1
+          fi
+          package_name="$(node -p "require('./package.json').name")"
+          beta_version="$(npm view "${package_name}@beta" version 2>/dev/null || true)"
+          latest_version="$(npm view "${package_name}@latest" version 2>/dev/null || true)"
+          current_version="$(node -p "require('./package.json').version")"
+          if [ -z "$beta_version" ]; then
+            echo 'promote=false' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          stable_version="${beta_version%%-beta.*}"
+          [[ "$beta_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+-beta\.[1-9][0-9]*$ ]] || exit 1
+          if [ "$latest_version" = "$stable_version" ] && [ "$current_version" = "$stable_version" ]; then
+            echo 'promote=false' >> "$GITHUB_OUTPUT"
+            echo "name=$package_name" >> "$GITHUB_OUTPUT"
+            echo "stable_version=$stable_version" >> "$GITHUB_OUTPUT"
+            if [ "$(git tag --list "v${stable_version}")" != "v${stable_version}" ]; then
+              echo 'tag_only=true' >> "$GITHUB_OUTPUT"
+            fi
+            exit 0
+          fi
+          LATEST_VERSION="$latest_version" STABLE_TARGET="$stable_version" node -e '
+            const parse = (value) => value.split(".").map(Number);
+            const latest = parse(process.env.LATEST_VERSION);
+            const target = parse(process.env.STABLE_TARGET);
+            if (latest.length !== 3 || latest.some((value) => !Number.isInteger(value))) process.exit(1);
+            for (let index = 0; index < 3; index += 1) {
+              if (latest[index] > target[index]) process.exit(0);
+              if (latest[index] < target[index]) process.exit(1);
+            }
+            process.exit(1);
+          ' && { echo 'promote=false' >> "$GITHUB_OUTPUT"; exit 0; }
+          source_sha="$(npm view "${package_name}@${beta_version}" gitHead)"
+          [[ "$source_sha" =~ ^[0-9a-f]{40}$ ]] || exit 1
+          beta_run_number="${beta_version##*.}"
+          matching_run="$(gh api --method GET \
+            "repos/${GITHUB_REPOSITORY}/actions/workflows/release.yml/runs" \
+            -f branch=main -f status=success \
+            --jq ".workflow_runs[] | select(.run_number == ${beta_run_number} and .head_sha == \"${source_sha}\") | .id" | head -n 1)"
+          [ -n "$matching_run" ] || { echo 'No successful production-like beta run found' >&2; exit 1; }
+          git fetch origin main
+          release_head_sha="$(git rev-parse origin/main)"
+          if [ "$release_head_sha" != "$source_sha" ]; then
+            git diff --quiet "$source_sha" "$release_head_sha" -- \
+              src package.json yarn.lock 'tsconfig*.json' || {
+                echo 'main release inputs advanced beyond the verified beta' >&2
+                exit 1
+              }
+          fi
+          git checkout --detach "$release_head_sha"
+          baseline="$(node -p "require('./package.json').version")"
+          expected_beta="$(BASELINE="$baseline" RUN_NUMBER="$beta_run_number" node -e '
+            const match = /^(\d+)\.(\d+)\.(\d+)$/.exec(process.env.BASELINE);
+            if (!match) process.exit(1);
+            process.stdout.write(`${match[1]}.${match[2]}.${Number(match[3]) + 1}-beta.${process.env.RUN_NUMBER}`);
+          ')"
+          [ "$expected_beta" = "$beta_version" ] || { echo 'Beta is not the next patch from its source' >&2; exit 1; }
+          echo 'promote=true' >> "$GITHUB_OUTPUT"
+          echo "name=$package_name" >> "$GITHUB_OUTPUT"
+          echo "beta_version=$beta_version" >> "$GITHUB_OUTPUT"
+          echo "stable_version=$stable_version" >> "$GITHUB_OUTPUT"
+          echo "source_sha=$source_sha" >> "$GITHUB_OUTPUT"
+          echo "release_head_sha=$release_head_sha" >> "$GITHUB_OUTPUT"
+      - name: Restore a missing stable tag after a partial promotion
+        if: steps.package.outputs.tag_only == 'true'
+        env:
+          STABLE_VERSION: ${{ steps.package.outputs.stable_version }}
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git tag -a "v${STABLE_VERSION}" -m "v${STABLE_VERSION}"
+          git push origin "refs/tags/v${STABLE_VERSION}"
+      - name: Activate Yarn
+        if: steps.package.outputs.promote == 'true'
+        run: |
+          corepack enable
+          corepack prepare yarn@${{ inputs.yarn-version }} --activate
+      - name: Install immutable dependencies
+        if: steps.package.outputs.promote == 'true'
+        run: yarn install --immutable
+      - name: Set stable version
+        if: steps.package.outputs.promote == 'true'
+        env:
+          STABLE_VERSION: ${{ steps.package.outputs.stable_version }}
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const manifest = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+          manifest.version = process.env.STABLE_VERSION;
+          fs.writeFileSync('package.json', `${JSON.stringify(manifest, null, 2)}\n`);
+          NODE
+      - name: Verify stable package
+        if: steps.package.outputs.promote == 'true'
+        run: yarn checks
+      - name: Ensure main still matches the verified source
+        if: steps.package.outputs.promote == 'true'
+        env:
+          RELEASE_HEAD_SHA: ${{ steps.package.outputs.release_head_sha }}
+        run: |
+          git fetch origin main
+          [ "$(git rev-parse origin/main)" = "$RELEASE_HEAD_SHA" ]
+      - name: Publish stable package candidate with provenance
+        if: steps.package.outputs.promote == 'true'
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.npm-token }}
+          PACKAGE_NAME: ${{ steps.package.outputs.name }}
+          STABLE_VERSION: ${{ steps.package.outputs.stable_version }}
+          RELEASE_HEAD_SHA: ${{ steps.package.outputs.release_head_sha }}
+        run: |
+          if npm view "${PACKAGE_NAME}@${STABLE_VERSION}" version >/dev/null 2>&1; then
+            [ "$(npm view "${PACKAGE_NAME}@${STABLE_VERSION}" gitHead)" = "$RELEASE_HEAD_SHA" ] || exit 1
+            npm dist-tag add "${PACKAGE_NAME}@${STABLE_VERSION}" stable-candidate
+          else
+            npm publish --access public --provenance --tag stable-candidate
+          fi
+      - name: Promote verified stable candidate to latest
+        if: steps.package.outputs.promote == 'true'
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.npm-token }}
+          PACKAGE_NAME: ${{ steps.package.outputs.name }}
+          STABLE_VERSION: ${{ steps.package.outputs.stable_version }}
+        run: npm dist-tag add "${PACKAGE_NAME}@${STABLE_VERSION}" latest
+      - name: Persist and tag stable source
+        if: steps.package.outputs.promote == 'true'
+        env:
+          STABLE_VERSION: ${{ steps.package.outputs.stable_version }}
+          RELEASE_HEAD_SHA: ${{ steps.package.outputs.release_head_sha }}
+        run: |
+          git fetch origin main
+          [ "$(git rev-parse origin/main)" = "$RELEASE_HEAD_SHA" ] || { echo 'main advanced during promotion' >&2; exit 1; }
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add package.json yarn.lock
+          git commit -m "chore(release): v${STABLE_VERSION} [skip beta]"
+          git push origin HEAD:main
+          git tag -a "v${STABLE_VERSION}" -m "v${STABLE_VERSION}"
+          git push origin "refs/tags/v${STABLE_VERSION}"
+      - name: Verify stable dist-tag
+        if: steps.package.outputs.promote == 'true'
+        env:
+          PACKAGE_NAME: ${{ steps.package.outputs.name }}
+          STABLE_VERSION: ${{ steps.package.outputs.stable_version }}
+        run: '[ "$(npm view "${PACKAGE_NAME}@latest" version)" = "$STABLE_VERSION" ]'

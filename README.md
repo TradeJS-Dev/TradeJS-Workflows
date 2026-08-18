@@ -11,10 +11,13 @@ jobs:
     uses: TradeJS-Dev/TradeJS-Workflows/.github/workflows/strategy-ci.yml@v1
 ```
 
-`strategy-publish.yml` supports npm trusted publishing through GitHub OIDC. The
-optional `npm-token` secret exists only for the first publication or a registry
-that has not been configured as a trusted publisher. Never pass install tokens
-or production credentials to these workflows.
+`strategy-publish.yml` is a beta-first release train. A caller push publishes a
+unique next-patch `*-beta.<run>` candidate, verifies it inside the production-like
+`TradeJS-Project` image, and only then moves the npm `beta` tag. Its separate
+weekly channel promotes the current verified beta to one stable patch under
+`latest`; production never installs a prerelease. The optional `npm-token`
+secret exists only for registries that have not enabled npm trusted publishing.
+Never pass install tokens or production credentials to these workflows.
 
 `monorepo-package-publish.yml` publishes one caller-selected Yarn workspace. It
 checks the workspace identity, refuses an already published version, runs the

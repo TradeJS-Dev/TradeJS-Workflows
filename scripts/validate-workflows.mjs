@@ -41,12 +41,32 @@ for (const relativePath of reusableFiles) {
 const publish = readRequired('.github/workflows/strategy-publish.yml');
 for (const required of [
   'id-token: write',
-  "github.event_name == 'release'",
+  "inputs.channel == 'beta'",
+  "inputs.channel == 'stable'",
+  'beta-candidate',
+  'beta-runtime-smoke.sh',
+  'yarn install --no-immutable',
+  'npm dist-tag add',
+  'stable-candidate',
+  'environment: npm-production',
   'npm publish --access public --provenance',
+  'main release inputs advanced beyond the verified beta',
 ]) {
   if (!publish.includes(required)) {
     fail(`strategy-publish.yml is missing ${required}`);
   }
+}
+if (
+  publish.indexOf('beta-runtime-smoke.sh') >
+  publish.indexOf('Mark the verified candidate as current beta')
+) {
+  fail('strategy beta tag moved before production-like smoke validation');
+}
+if (
+  publish.indexOf('Verify stable package') >
+  publish.indexOf('Promote verified stable candidate to latest')
+) {
+  fail('strategy stable tag moved before stable package validation');
 }
 
 const monorepoPublish = readRequired(

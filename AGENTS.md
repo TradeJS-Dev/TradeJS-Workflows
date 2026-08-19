@@ -23,6 +23,9 @@ These rules apply to the TradeJS reusable-workflows repository.
 - Do not use `secrets: inherit`.
 - Keep reusable callers pinned to the stable `v1` ref.
 - Monorepo callers must hard-code the workspace name and package directory.
+- Keep strategy publication beta-first and stable promotion weekly. Production
+  config/version changes belong to the downstream `TradeJS-Project` commit;
+  reusable publication workflows must never write runtime Redis state.
 
 ## Verification
 

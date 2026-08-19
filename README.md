@@ -19,6 +19,12 @@ weekly channel promotes the current verified beta to one stable patch under
 secret exists only for registries that have not enabled npm trusted publishing.
 Never pass install tokens or production credentials to these workflows.
 
+Stable promotion does not mutate production Redis or deploy a strategy by
+itself. `TradeJS-Project` performs the weekly stable dependency sync; when a
+declared strategy package or shared runtime package changes, that Project
+commit also increments the affected Git-owned runtime strategy `version`, runs
+its production-like image smoke, and publishes one immutable app image.
+
 `monorepo-package-publish.yml` publishes one caller-selected Yarn workspace. It
 checks the workspace identity, refuses an already published version, runs the
 caller's complete `yarn checks`, and publishes with provenance. A caller should

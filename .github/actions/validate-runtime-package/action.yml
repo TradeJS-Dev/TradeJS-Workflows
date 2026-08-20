@@ -1,0 +1,9 @@
+name: Validate TradeJS runtime package contract
+description: Reject packaged TradeJS runtime copies and require matching host peers
+
+runs:
+  using: composite
+  steps:
+    - name: Validate package dependency boundary
+      shell: bash
+      run: node "$GITHUB_ACTION_PATH/validate.mjs" "$GITHUB_WORKSPACE/package.json"

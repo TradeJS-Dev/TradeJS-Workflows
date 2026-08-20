@@ -12,6 +12,6 @@
     "node": "24.x"
   },
   "scripts": {
-    "checks": "node ./scripts/validate-workflows.mjs"
+    "checks": "node --test ./scripts/*.test.mjs && node ./scripts/validate-workflows.mjs"
   }
 }

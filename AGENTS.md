@@ -24,8 +24,12 @@ These rules apply to the TradeJS reusable-workflows repository.
 - Keep reusable callers pinned to the stable `v1` ref.
 - Monorepo callers must hard-code the workspace name and package directory.
 - Keep strategy publication beta-first and stable promotion weekly. Production
-  config/version changes belong to the downstream `TradeJS-Project` commit;
-  reusable publication workflows must never write runtime Redis state.
+  declarations and exact dependencies belong to the downstream
+  `TradeJS-Project` commit. Runtime identifiers are computed from that verified
+  composition; reusable publication workflows must never invent versions,
+  publish Project images, or write runtime Redis state.
+- Reject caller packages that place `@tradejs/*` in `dependencies`, or whose
+  TradeJS `peerDependencies` and `devDependencies` use different ranges.
 
 ## Verification
 

@@ -52,10 +52,19 @@ for (const required of [
   'environment: npm-production',
   'npm publish --access public --provenance',
   'main release inputs advanced beyond the verified beta',
+  'Validate host-provided TradeJS runtime contract',
+  'validate-runtime-package@v1',
 ]) {
   if (!publish.includes(required)) {
     fail(`strategy-publish.yml is missing ${required}`);
   }
+}
+
+if (
+  publish.indexOf('Validate host-provided TradeJS runtime contract') >
+  publish.indexOf('Publish beta candidate with provenance')
+) {
+  fail('strategy dependency contract must be validated before beta publication');
 }
 if (
   publish.indexOf('beta-runtime-smoke.sh') >

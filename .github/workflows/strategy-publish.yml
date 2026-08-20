@@ -48,6 +48,8 @@ jobs:
           node-version: ${{ inputs.node-version }}
           registry-url: https://registry.npmjs.org
           package-manager-cache: false
+      - name: Validate host-provided TradeJS runtime contract
+        uses: TradeJS-Dev/TradeJS-Workflows/.github/actions/validate-runtime-package@v1
       - name: Activate Yarn
         run: |
           corepack enable
@@ -153,6 +155,8 @@ jobs:
           node-version: ${{ inputs.node-version }}
           registry-url: https://registry.npmjs.org
           package-manager-cache: false
+      - name: Validate host-provided TradeJS runtime contract
+        uses: TradeJS-Dev/TradeJS-Workflows/.github/actions/validate-runtime-package@v1
       - name: Resolve the current verified beta
         id: package
         env:

@@ -19,15 +19,23 @@ weekly channel promotes the current verified beta to one stable patch under
 secret exists only for registries that have not enabled npm trusted publishing.
 Never pass install tokens or production credentials to these workflows.
 
+Every release validates the runtime dependency boundary before publication.
+A public TradeJS package may install `@tradejs/*` packages for its own checks,
+but it must expose the same ranges as `peerDependencies` and must not package a
+second TradeJS runtime through `dependencies`. TradeJS-Project supplies one
+exact runtime composition and verifies it through its package manifest.
+
 Package documentation is part of the verified candidate. Standalone callers
 should trigger this workflow for `README.md` and `docs/**` changes so the npm
 package page and packaged documentation advance with the source repository.
 
 Stable promotion does not mutate production Redis or deploy a strategy by
-itself. `TradeJS-Project` performs the weekly stable dependency sync; when a
-declared strategy package or shared runtime package changes, that Project
-commit also increments the affected Git-owned runtime strategy `version`, runs
-its production-like image smoke, and publishes one immutable app image.
+itself. `TradeJS-Project` performs the weekly stable dependency sync and runs
+strict composition validation. Its computed `strategyRevision` changes when a
+strategy package, its direct TradeJS dependencies, or its parsed effective
+config changes; `deploymentCompositionId` binds the complete deployment. Image
+publication is an explicit Project workflow dispatch, not a side effect of a
+source push.
 
 `monorepo-package-publish.yml` publishes one caller-selected Yarn workspace. It
 checks the workspace identity, refuses an already published version, runs the

@@ -205,7 +205,7 @@ jobs:
           release_head_sha="$(git rev-parse origin/main)"
           if [ "$release_head_sha" != "$source_sha" ]; then
             git diff --quiet "$source_sha" "$release_head_sha" -- \
-              src package.json yarn.lock 'tsconfig*.json' || {
+              src docs README.md package.json yarn.lock 'tsconfig*.json' || {
                 echo 'main release inputs advanced beyond the verified beta' >&2
                 exit 1
               }

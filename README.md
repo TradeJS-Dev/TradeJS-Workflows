@@ -19,6 +19,10 @@ weekly channel promotes the current verified beta to one stable patch under
 secret exists only for registries that have not enabled npm trusted publishing.
 Never pass install tokens or production credentials to these workflows.
 
+Package documentation is part of the verified candidate. Standalone callers
+should trigger this workflow for `README.md` and `docs/**` changes so the npm
+package page and packaged documentation advance with the source repository.
+
 Stable promotion does not mutate production Redis or deploy a strategy by
 itself. `TradeJS-Project` performs the weekly stable dependency sync; when a
 declared strategy package or shared runtime package changes, that Project

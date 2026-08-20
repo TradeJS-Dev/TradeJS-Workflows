@@ -24,8 +24,8 @@ on:
         default: 4.13.0
     secrets:
       npm-token:
-        description: Optional bootstrap token when npm trusted publishing is unavailable
-        required: false
+        description: Registry credential required for verified dist-tag promotion
+        required: true
 
 permissions:
   actions: read
@@ -50,6 +50,10 @@ jobs:
           package-manager-cache: false
       - name: Validate host-provided TradeJS runtime contract
         uses: TradeJS-Dev/TradeJS-Workflows/.github/actions/validate-runtime-package@v1
+      - name: Validate npm release credentials
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.npm-token }}
+        run: test -n "$NODE_AUTH_TOKEN"
       - name: Activate Yarn
         run: |
           corepack enable
@@ -157,6 +161,10 @@ jobs:
           package-manager-cache: false
       - name: Validate host-provided TradeJS runtime contract
         uses: TradeJS-Dev/TradeJS-Workflows/.github/actions/validate-runtime-package@v1
+      - name: Validate npm release credentials
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.npm-token }}
+        run: test -n "$NODE_AUTH_TOKEN"
       - name: Resolve the current verified beta
         id: package
         env:

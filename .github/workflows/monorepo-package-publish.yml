@@ -28,8 +28,8 @@ on:
         default: latest
     secrets:
       npm-token:
-        description: Optional bootstrap token when npm trusted publishing is unavailable
-        required: false
+        description: Registry credential required for package publication
+        required: true
 
 permissions:
   contents: read
@@ -47,6 +47,10 @@ jobs:
         with:
           node-version: ${{ inputs.node-version }}
           registry-url: https://registry.npmjs.org
+      - name: Validate npm release credentials
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.npm-token }}
+        run: test -n "$NODE_AUTH_TOKEN"
       - name: Activate Yarn
         run: |
           corepack enable

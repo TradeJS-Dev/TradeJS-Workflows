@@ -15,9 +15,12 @@ jobs:
 unique next-patch `*-beta.<run>` candidate, verifies it inside the production-like
 `TradeJS-Project` image, and only then moves the npm `beta` tag. Its separate
 weekly channel promotes the current verified beta to one stable patch under
-`latest`; production never installs a prerelease. The optional `npm-token`
-secret exists only for registries that have not enabled npm trusted publishing.
-Never pass install tokens or production credentials to these workflows.
+`latest`; production never installs a prerelease. The scoped `npm-token` secret
+is mandatory because verified candidates require explicit dist-tag operations
+after smoke validation. npm trusted publishing still supplies publication
+provenance; it is not treated as an authentication fallback for the remaining
+release-management steps. Never pass install tokens or production credentials
+to these workflows.
 
 Every release validates the runtime dependency boundary before publication.
 A public TradeJS package may install `@tradejs/*` packages for its own checks,

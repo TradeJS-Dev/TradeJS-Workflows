@@ -54,6 +54,7 @@ for (const required of [
   'main release inputs advanced beyond the verified beta',
   'Validate host-provided TradeJS runtime contract',
   'validate-runtime-package@v1',
+  'Validate npm release credentials',
 ]) {
   if (!publish.includes(required)) {
     fail(`strategy-publish.yml is missing ${required}`);
@@ -65,6 +66,9 @@ if (
   publish.indexOf('Publish beta candidate with provenance')
 ) {
   fail('strategy dependency contract must be validated before beta publication');
+}
+if (!/npm-token:\n\s+description:[^\n]+\n\s+required: true/.test(publish)) {
+  fail('strategy publication must require npm-token');
 }
 if (
   publish.indexOf('beta-runtime-smoke.sh') >
@@ -82,9 +86,13 @@ if (
 const monorepoPublish = readRequired(
   '.github/workflows/monorepo-package-publish.yml',
 );
+if (!/npm-token:\n\s+description:[^\n]+\n\s+required: true/.test(monorepoPublish)) {
+  fail('monorepo publication must require npm-token');
+}
 for (const required of [
   'id-token: write',
   'Validate unpublished package identity',
+  'Validate npm release credentials',
   'yarn workspace "$WORKSPACE" npm publish',
   '--provenance',
 ]) {

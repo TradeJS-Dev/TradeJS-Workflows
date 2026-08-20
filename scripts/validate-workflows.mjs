@@ -44,9 +44,10 @@ for (const required of [
   "inputs.channel == 'beta'",
   "inputs.channel == 'stable'",
   'beta-candidate',
-  'beta-runtime-smoke.sh',
-  'PUPPETEER_SKIP_DOWNLOAD',
-  'yarn install --no-immutable',
+  'Verify published package in a clean consumer',
+  'consumer_root="$(mktemp -d)"',
+  'npm install --ignore-scripts --no-audit --no-fund',
+  'await import(publicSpecifier)',
   'npm dist-tag add',
   'stable-candidate',
   'environment: npm-production',
@@ -71,16 +72,26 @@ if (!/npm-token:\n\s+description:[^\n]+\n\s+required: true/.test(publish)) {
   fail('strategy publication must require npm-token');
 }
 if (
-  publish.indexOf('beta-runtime-smoke.sh') >
+  publish.indexOf('Verify published package in a clean consumer') >
   publish.indexOf('Mark the verified candidate as current beta')
 ) {
-  fail('strategy beta tag moved before production-like smoke validation');
+  fail('strategy beta tag moved before clean-consumer validation');
 }
 if (
   publish.indexOf('Verify stable package') >
   publish.indexOf('Promote verified stable candidate to latest')
 ) {
   fail('strategy stable tag moved before stable package validation');
+}
+
+for (const forbidden of [
+  'TradeJS-Project.git',
+  'beta-runtime-smoke.sh',
+  'docker build',
+]) {
+  if (publish.includes(forbidden)) {
+    fail(`strategy publication crosses the Project boundary: ${forbidden}`);
+  }
 }
 
 const monorepoPublish = readRequired(

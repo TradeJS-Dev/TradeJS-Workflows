@@ -30,6 +30,11 @@ These rules apply to the TradeJS reusable-workflows repository.
   `TradeJS-Project` commit. Runtime identifiers are computed from that verified
   composition; reusable publication workflows must never invent versions,
   publish Project images, or write runtime Redis state.
+- Validate a beta package by installing its published tarball and declared peers
+  in a clean npm consumer and importing a public export. Do not clone Project,
+  build application images, or start exchange-facing daemons from a package
+  release workflow. Project owns composition and image smoke tests after stable
+  dependency synchronization.
 - Reject caller packages that place `@tradejs/*` in `dependencies`, or whose
   TradeJS `peerDependencies` and `devDependencies` use different ranges.
 

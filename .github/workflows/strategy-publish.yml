@@ -103,25 +103,49 @@ jobs:
             [ "$attempt" -lt 12 ] || exit 1
             sleep 10
           done
-      - name: Build and smoke the production-like Project image
+      - name: Verify published package in a clean consumer
         env:
           PACKAGE_NAME: ${{ steps.package.outputs.name }}
           PACKAGE_VERSION: ${{ steps.package.outputs.version }}
-          PUPPETEER_SKIP_DOWNLOAD: 'true'
         run: |
-          git clone --depth 1 https://github.com/TradeJS-Dev/TradeJS-Project.git ../tradejs-project-beta
-          cd ../tradejs-project-beta
-          project_sha="$(git rev-parse HEAD)"
-          node ./scripts/set-tradejs-package-version.mjs "$PACKAGE_NAME" "$PACKAGE_VERSION"
-          yarn install --no-immutable
-          TRADEJS_ALLOW_PRERELEASE=true yarn checks
-          docker build \
-            --build-arg "TRADEJS_PROJECT_SHA=$project_sha" \
-            --build-arg "TRADEJS_ALLOW_PRERELEASE=true" \
-            -t "tradejs-project-beta:$GITHUB_SHA" .
-          bash ./scripts/beta-runtime-smoke.sh \
-            "tradejs-project-beta:$GITHUB_SHA" "$PACKAGE_NAME" \
-            "$PACKAGE_VERSION" "$project_sha"
+          consumer_root="$(mktemp -d)"
+          trap 'rm -rf "$consumer_root"' EXIT
+          cd "$consumer_root"
+          npm init --yes >/dev/null
+          npm install --ignore-scripts --no-audit --no-fund \
+            "${PACKAGE_NAME}@${PACKAGE_VERSION}"
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          import path from 'node:path';
+
+          const packageName = process.env.PACKAGE_NAME;
+          const packageVersion = process.env.PACKAGE_VERSION;
+          const packageRoot = path.join(process.cwd(), 'node_modules', ...packageName.split('/'));
+          const manifest = JSON.parse(
+            fs.readFileSync(path.join(packageRoot, 'package.json'), 'utf8'),
+          );
+          if (manifest.name !== packageName || manifest.version !== packageVersion) {
+            throw new Error(
+              `Installed ${manifest.name}@${manifest.version}; expected ${packageName}@${packageVersion}`,
+            );
+          }
+
+          const publicExports = Object.keys(manifest.exports ?? {}).filter(
+            (subpath) => subpath !== './package.json',
+          );
+          const publicSpecifier = publicExports.includes('.')
+            ? packageName
+            : publicExports[0]?.startsWith('./')
+              ? `${packageName}/${publicExports[0].slice(2)}`
+              : undefined;
+          if (!publicSpecifier) {
+            throw new Error(`${packageName} must declare at least one public export`);
+          }
+          const publishedModule = await import(publicSpecifier);
+          if (Object.keys(publishedModule).length === 0) {
+            throw new Error(`${publicSpecifier} does not expose any runtime exports`);
+          }
+          NODE
       - name: Mark the verified candidate as current beta
         env:
           NODE_AUTH_TOKEN: ${{ secrets.npm-token }}

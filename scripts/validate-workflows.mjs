@@ -50,7 +50,6 @@ for (const required of [
   'await import(publicSpecifier)',
   'npm dist-tag add',
   'stable-candidate',
-  'environment: npm-production',
   'npm publish --access public --provenance',
   'main release inputs advanced beyond the verified beta',
   'Validate host-provided TradeJS runtime contract',

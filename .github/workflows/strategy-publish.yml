@@ -7,11 +7,6 @@ on:
         description: beta for push validation, stable for weekly promotion
         required: true
         type: string
-      confirm-promotion:
-        description: Required for a manual stable promotion
-        required: false
-        default: false
-        type: boolean
       node-version:
         description: Node.js major used by the package repository
         required: false
@@ -191,13 +186,8 @@ jobs:
       - name: Resolve the current verified beta
         id: package
         env:
-          CONFIRM_PROMOTION: ${{ inputs.confirm-promotion }}
           GH_TOKEN: ${{ github.token }}
         run: |
-          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ] && [ "$CONFIRM_PROMOTION" != true ]; then
-            echo 'confirm-promotion is required for a manual stable release' >&2
-            exit 1
-          fi
           package_name="$(node -p "require('./package.json').name")"
           beta_version="$(npm view "${package_name}@beta" version 2>/dev/null || true)"
           latest_version="$(npm view "${package_name}@latest" version 2>/dev/null || true)"

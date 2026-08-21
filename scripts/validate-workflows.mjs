@@ -39,6 +39,9 @@ for (const relativePath of reusableFiles) {
 }
 
 const publish = readRequired('.github/workflows/strategy-publish.yml');
+if (publish.includes('confirm-promotion')) {
+  fail('strategy publication must not require redundant manual confirmation');
+}
 for (const required of [
   'id-token: write',
   "inputs.channel == 'beta'",

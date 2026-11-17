@@ -91,13 +91,15 @@ jobs:
           PACKAGE_NAME: ${{ steps.package.outputs.name }}
           PACKAGE_VERSION: ${{ steps.package.outputs.version }}
         run: |
-          for attempt in $(seq 1 12); do
-            if [ "$(npm view "${PACKAGE_NAME}@${PACKAGE_VERSION}" version 2>/dev/null)" = "$PACKAGE_VERSION" ]; then
+          for attempt in $(seq 1 60); do
+            tarball="$(npm view --prefer-online "${PACKAGE_NAME}@${PACKAGE_VERSION}" dist.tarball 2>/dev/null || true)"
+            if [ -n "$tarball" ] && curl --fail --silent --head --max-time 10 "$tarball" >/dev/null; then
               exit 0
             fi
-            [ "$attempt" -lt 12 ] || exit 1
-            sleep 10
+            [ "$attempt" -eq 60 ] || sleep 10
           done
+          echo "::error::npm did not make ${PACKAGE_NAME}@${PACKAGE_VERSION} downloadable"
+          exit 1
       - name: Verify published package in a clean consumer
         env:
           PACKAGE_NAME: ${{ steps.package.outputs.name }}
@@ -152,11 +154,11 @@ jobs:
           PACKAGE_NAME: ${{ steps.package.outputs.name }}
           PACKAGE_VERSION: ${{ steps.package.outputs.version }}
         run: |
-          for attempt in $(seq 1 12); do
-            if [ "$(npm view "${PACKAGE_NAME}@beta" version 2>/dev/null || true)" = "$PACKAGE_VERSION" ]; then
+          for attempt in $(seq 1 60); do
+            if [ "$(npm view --prefer-online "${PACKAGE_NAME}@beta" version 2>/dev/null || true)" = "$PACKAGE_VERSION" ]; then
               break
             fi
-            [ "$attempt" -lt 12 ] || exit 1
+            [ "$attempt" -lt 60 ] || exit 1
             sleep 10
           done
           printf 'Verified %s@%s from %s\n' "$PACKAGE_NAME" "$PACKAGE_VERSION" "$GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"
@@ -307,7 +309,20 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.npm-token }}
           PACKAGE_NAME: ${{ steps.package.outputs.name }}
           STABLE_VERSION: ${{ steps.package.outputs.stable_version }}
-        run: npm dist-tag add "${PACKAGE_NAME}@${STABLE_VERSION}" latest
+          RELEASE_HEAD_SHA: ${{ steps.package.outputs.release_head_sha }}
+        run: |
+          for attempt in $(seq 1 60); do
+            tarball="$(npm view --prefer-online "${PACKAGE_NAME}@${STABLE_VERSION}" dist.tarball 2>/dev/null || true)"
+            if [ -n "$tarball" ] && curl --fail --silent --head --max-time 10 "$tarball" >/dev/null; then
+              git fetch origin main
+              [ "$(git rev-parse origin/main)" = "$RELEASE_HEAD_SHA" ] || { echo 'main advanced during publication' >&2; exit 1; }
+              npm dist-tag add "${PACKAGE_NAME}@${STABLE_VERSION}" latest
+              exit 0
+            fi
+            [ "$attempt" -eq 60 ] || sleep 10
+          done
+          echo "::error::npm did not make ${PACKAGE_NAME}@${STABLE_VERSION} downloadable"
+          exit 1
       - name: Persist and tag stable source
         if: steps.package.outputs.promote == 'true'
         env:
@@ -329,10 +344,10 @@ jobs:
           PACKAGE_NAME: ${{ steps.package.outputs.name }}
           STABLE_VERSION: ${{ steps.package.outputs.stable_version }}
         run: |
-          for attempt in $(seq 1 12); do
-            if [ "$(npm view "${PACKAGE_NAME}@latest" version 2>/dev/null || true)" = "$STABLE_VERSION" ]; then
+          for attempt in $(seq 1 60); do
+            if [ "$(npm view --prefer-online "${PACKAGE_NAME}@latest" version 2>/dev/null || true)" = "$STABLE_VERSION" ]; then
               exit 0
             fi
-            [ "$attempt" -lt 12 ] || exit 1
+            [ "$attempt" -lt 60 ] || exit 1
             sleep 10
           done
